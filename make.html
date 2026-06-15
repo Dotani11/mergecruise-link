@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Merge Cruise — Facebook link generator</title>
+  <style>
+    body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+           max-width:680px; margin:0 auto; padding:32px 20px; color:#15233b;
+           background:#f6f8fc; }
+    h1 { font-size:21px; margin:0 0 4px; }
+    .sub { color:#5a6781; margin:0 0 22px; font-size:14px; }
+    label { font-weight:700; font-size:14px; display:block; margin:18px 0 6px; }
+    textarea { width:100%; box-sizing:border-box; min-height:96px; padding:12px;
+               border:1px solid #cdd6e6; border-radius:10px; font-family:ui-monospace,Menlo,monospace;
+               font-size:13px; resize:vertical; }
+    .btn { margin-top:14px; padding:12px 20px; background:#1a73e8; color:#fff; border:0;
+           border-radius:9px; font-weight:700; font-size:15px; cursor:pointer; }
+    .btn.secondary { background:#fff; color:#1a73e8; border:1.5px solid #1a73e8; }
+    .btn:disabled { opacity:.5; cursor:default; }
+    .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    .out { margin-top:10px; padding:12px 14px; background:#fff; border:1px solid #cdd6e6;
+           border-radius:10px; font-family:ui-monospace,Menlo,monospace; font-size:13px;
+           word-break:break-all; display:none; }
+    .out.show { display:block; }
+    .ok { color:#137a3f; font-weight:700; }
+    .err { color:#a3231b; font-weight:700; margin-top:10px; display:none; }
+    .err.show { display:block; }
+    .note { font-size:12.5px; color:#5a6781; margin-top:8px; line-height:1.5; }
+    code { background:#eef2f9; padding:1px 5px; border-radius:5px; }
+  </style>
+</head>
+<body>
+  <h1>🔗 Merge Cruise reward → Facebook link</h1>
+  <p class="sub">Paste a <code>mergecruise://…</code> reward link. You'll get an <code>https</code> link you can post on Facebook/Instagram. It opens the game on the reward (or sends people to the store if they don't have the app).</p>
+
+  <label for="in">Paste the deep link</label>
+  <textarea id="in" placeholder="mergecruise://reward?p=…&s=…"></textarea>
+  <div class="row"><button class="btn" id="gen">Generate https link</button></div>
+  <p class="err" id="err"></p>
+
+  <label id="lbl1" style="display:none">Shareable https link</label>
+  <div class="out" id="long"></div>
+  <div class="row" id="longrow" style="display:none">
+    <button class="btn secondary" id="copyLong">Copy</button>
+    <button class="btn secondary" id="shorten">Make it short (is.gd)</button>
+  </div>
+
+  <label id="lbl2" style="display:none">Short link</label>
+  <div class="out" id="short"></div>
+  <div class="row" id="shortrow" style="display:none">
+    <button class="btn secondary" id="copyShort">Copy short</button>
+  </div>
+
+  <p class="note" id="afternote" style="display:none">
+    ⚠️ When opened inside the Facebook/Instagram in-app browser, the page will tell users to
+    tap <b>⋯ → “Open in browser”</b> first — that's a platform limit, not a bug. On Android it
+    usually opens straight away.
+  </p>
+
+  <script>
+  (function () {
+    // Root redirect page that turns the https link back into mergecruise://reward.
+    var REDIRECT_BASE = location.origin + location.pathname.replace(/make\.html$/, "");
+    if (!/\/$/.test(REDIRECT_BASE)) REDIRECT_BASE += "/";
+
+    var $ = function (id) { return document.getElementById(id); };
+
+    function rawParam(qs, name) {
+      var m = qs.match(new RegExp("[?&]" + name + "=([^&#]*)"));
+      return m ? m[1] : null;                       // verbatim — never decode (preserves base64 + HMAC)
+    }
+
+    function showErr(msg) { var e = $("err"); e.textContent = "⚠️ " + msg; e.classList.add("show"); }
+    function clearErr() { $("err").classList.remove("show"); }
+
+    function generate() {
+      clearErr();
+      $("short").classList.remove("show"); $("shortrow").style.display = "none"; $("lbl2").style.display = "none";
+      var raw = $("in").value.trim();
+      if (!raw) { showErr("Paste a mergecruise:// link first."); return; }
+      if (raw.indexOf("?") === -1) { showErr("That doesn't look like a reward link — no parameters found."); return; }
+
+      var qs = raw.slice(raw.indexOf("?"));          // everything from the first ?
+      var p = rawParam(qs, "p");
+      var s = rawParam(qs, "s");
+      if (!p || !s) { showErr("Couldn't find both p and s in the link. Paste the full reward link."); return; }
+
+      // Keep ONLY p and s, in the original order — drops anything extra, byte-exact.
+      var link = REDIRECT_BASE + "?p=" + p + "&s=" + s;
+
+      $("long").textContent = link; $("long").classList.add("show");
+      $("lbl1").style.display = "block"; $("longrow").style.display = "flex";
+      $("afternote").style.display = "block";
+      $("long").dataset.link = link;
+    }
+
+    function copy(text, btn) {
+      navigator.clipboard.writeText(text).then(function () {
+        var t = btn.textContent; btn.textContent = "✓ Copied"; btn.classList.add("ok");
+        setTimeout(function () { btn.textContent = t; btn.classList.remove("ok"); }, 1400);
+      });
+    }
+
+    function shorten() {
+      var link = $("long").dataset.link; if (!link) return;
+      var b = $("shorten"); b.disabled = true; var orig = b.textContent; b.textContent = "Shortening…";
+      // is.gd: free, no key, sends CORS headers. Falls back to a manual link if blocked.
+      fetch("https://is.gd/create.php?format=simple&url=" + encodeURIComponent(link))
+        .then(function (r) { return r.text(); })
+        .then(function (txt) {
+          txt = (txt || "").trim();
+          if (/^https?:\/\//.test(txt)) {
+            $("short").textContent = txt; $("short").classList.add("show");
+            $("lbl2").style.display = "block"; $("shortrow").style.display = "flex";
+            $("short").dataset.link = txt;
+          } else { throw new Error(txt || "no url"); }
+        })
+        .catch(function () {
+          showErr("Auto-shorten failed (network/CORS). The long link above works fine on Facebook — or paste it into tinyurl.com / bit.ly.");
+        })
+        .finally(function () { b.disabled = false; b.textContent = orig; });
+    }
+
+    $("gen").addEventListener("click", generate);
+    $("copyLong").addEventListener("click", function () { copy($("long").dataset.link, this); });
+    $("copyShort").addEventListener("click", function () { copy($("short").dataset.link, this); });
+    $("shorten").addEventListener("click", shorten);
+  })();
+  </script>
+</body>
+</html>
