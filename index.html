@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Opening Merge Cruise…</title>
+  <meta name="robots" content="noindex">
+  <style>
+    html,body { height:100%; margin:0; }
+    body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+           text-align:center; padding:48px 20px; color:#15233b;
+           background:linear-gradient(160deg,#eaf2ff 0%,#ffffff 60%); }
+    h2 { margin:0 0 8px; font-size:22px; }
+    p  { margin:6px 0; color:#42506b; }
+    .btn { display:inline-block; margin-top:22px; padding:15px 30px; background:#1a73e8;
+           color:#fff; border-radius:10px; text-decoration:none; font-weight:700; font-size:17px; }
+    .hint { margin-top:26px; padding:14px 16px; border-radius:10px; background:#fff3f2;
+            color:#a3231b; font-weight:600; display:none; line-height:1.45; }
+    .spin { width:34px; height:34px; margin:10px auto 18px; border:4px solid #cfe0ff;
+            border-top-color:#1a73e8; border-radius:50%; animation:r 0.9s linear infinite; }
+    @keyframes r { to { transform:rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="spin" aria-hidden="true"></div>
+  <h2>Opening Merge Cruise…</h2>
+  <p>If your reward doesn't open automatically, tap the button below.</p>
+  <a id="manual" class="btn" href="#">Open Merge Cruise</a>
+  <p id="fbhint" class="hint">
+    You're in Facebook's in-app browser, which can't open the game directly.<br>
+    Tap the <b>⋯</b> menu (top corner) → <b>“Open in browser”</b>, then tap the link again.
+  </p>
+
+  <script>
+  (function () {
+    // ---- App / store config (Merge Cruise) ----
+    var SCHEME          = "mergecruise";
+    var SCHEME_HOST     = "reward";                       // mergecruise://reward
+    var ANDROID_PACKAGE = "com.peerplay.megamerge";
+    var IOS_STORE       = "https://apps.apple.com/app/id6459056553";
+    var PLAY_STORE      = "https://play.google.com/store/apps/details?id=" + ANDROID_PACKAGE;
+
+    // ---- Extract p and s as RAW bytes from the query string ----
+    // We do NOT use URLSearchParams: .get() URL-decodes, turning base64 '+' into ' '
+    // and breaking the HMAC. We also keep ONLY p and s (dropping fbclid/utm_* that
+    // Facebook may append), so this is safe whether the signature covers just p or
+    // the whole query string.
+    function rawParam(name) {
+      var m = window.location.search.match(new RegExp("[?&]" + name + "=([^&#]*)"));
+      return m ? m[1] : null;                              // returned verbatim, not decoded
+    }
+    var p = rawParam("p");
+    var s = rawParam("s");
+
+    var query = "";
+    if (p !== null) query += "?p=" + p;
+    if (s !== null) query += (query ? "&" : "?") + "s=" + s;
+
+    var schemeUrl = SCHEME + "://" + SCHEME_HOST + query;  // mergecruise://reward?p=…&s=…
+
+    // ---- Environment detection ----
+    var ua = navigator.userAgent || "";
+    var isAndroid   = /android/i.test(ua);
+    var isIOS       = /iphone|ipad|ipod/i.test(ua) ||
+                      (/Macintosh/.test(ua) && "ontouchend" in document); // iPadOS
+    var inFBWebView = /\b(FBAN|FBAV|FB_IAB|Instagram)\b/i.test(ua);
+
+    document.getElementById("manual").setAttribute("href", schemeUrl);
+    if (inFBWebView) document.getElementById("fbhint").style.display = "block";
+
+    function open() {
+      if (isAndroid) {
+        // Android Intent URL: opens the app if installed, else Play Store.
+        // Chrome blocks plain custom-scheme redirects, so we use intent:// .
+        var intentParams = query.charAt(0) === "?" ? query.slice(1) : query;
+        window.location.href =
+          "intent://" + SCHEME_HOST + (intentParams ? "?" + intentParams : "") +
+          "#Intent;scheme=" + SCHEME + ";package=" + ANDROID_PACKAGE +
+          ";S.browser_fallback_url=" + encodeURIComponent(PLAY_STORE) + ";end";
+        return;
+      }
+
+      // iOS / desktop: try the scheme, fall back to the store if nothing took over.
+      var fellBack = false;
+      var timer = setTimeout(function () {
+        if (!fellBack) { fellBack = true; window.location.href = isIOS ? IOS_STORE : PLAY_STORE; }
+      }, 1600);
+      document.addEventListener("visibilitychange", function () {
+        if (document.hidden) { fellBack = true; clearTimeout(timer); } // app opened -> cancel
+      });
+      window.location.href = schemeUrl;
+    }
+
+    // Don't auto-fire inside the FB/IG WebView (it can't launch the scheme and would
+    // just bounce the user to the store). Let the hint + manual button drive it.
+    if (!inFBWebView) open();
+  })();
+  </script>
+</body>
+</html>
